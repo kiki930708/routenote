@@ -1,0 +1,1742 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>RouteNote — 스마트 여행 일정 & 동선 플래너</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    :root {
+      --primary: #3b82f6;
+      --primary-dark: #2563eb;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --danger: #ef4444;
+      --success: #10b981;
+      --shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      --radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* App Shell */
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      width: 100%;
+    }
+
+    /* Header */
+    .app-header {
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      gap: 8px;
+      flex-shrink: 0;
+      z-index: 1000;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--primary-dark);
+      white-space: nowrap;
+    }
+
+    .trip-selector-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
+      max-width: 340px;
+    }
+
+    select.trip-select {
+      width: 100%;
+      padding: 7px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: 12.5px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover { background: #f1f5f9; }
+    .btn:active { transform: scale(0.98); }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .btn-primary:hover { background: var(--primary-dark); }
+
+    .btn-danger {
+      color: var(--danger);
+      border-color: #fecaca;
+      background: #fef2f2;
+    }
+    .btn-danger:hover { background: #fee2e2; }
+
+    .btn-sm {
+      padding: 5px 9px;
+      font-size: 12px;
+      border-radius: 8px;
+    }
+
+    /* Sync indicator */
+    .sync-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .sync-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+    .sync-badge.connected .sync-dot { background: var(--success); }
+    .sync-badge.connected { color: #065f46; background: #ecfdf5; }
+
+    /* Main Workspace */
+    .workspace {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* Sidebar (Itinerary & Expenses) */
+    .sidebar {
+      width: 420px;
+      max-width: 100%;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      z-index: 500;
+    }
+
+    /* Day Tabs */
+    .day-tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      flex-shrink: 0;
+      scrollbar-width: none;
+    }
+    .day-tabs::-webkit-scrollbar { display: none; }
+
+    .day-tab {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text-muted);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .day-tab.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    /* Sub-nav (Schedule vs Budget) */
+    .sub-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: #f8fafc;
+      flex-shrink: 0;
+    }
+    .sub-tab {
+      flex: 1;
+      padding: 9px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .sub-tab.active {
+      color: var(--primary-dark);
+      border-bottom-color: var(--primary);
+      background: var(--surface);
+    }
+
+    /* Scroll Area */
+    .panel-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Tip Banner */
+    .hint-box {
+      background: #eff6ff;
+      border: 1px solid #dbeafe;
+      color: #1e40af;
+      font-size: 12px;
+      padding: 9px 11px;
+      border-radius: 10px;
+      line-height: 1.45;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    /* Timeline Cards */
+    .stop-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      cursor: pointer;
+      position: relative;
+    }
+    .stop-card:hover {
+      border-color: #93c5fd;
+      box-shadow: var(--shadow);
+    }
+    .stop-card.selected {
+      border-color: var(--primary);
+      background: #f8fbff;
+    }
+
+    .stop-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .stop-badge {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .stop-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .stop-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+      flex-wrap: wrap;
+    }
+
+    .cat-pill {
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 11px;
+      background: #f1f5f9;
+      color: #334155;
+    }
+
+    .stop-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 3px 0;
+      word-break: keep-all;
+    }
+
+    .stop-addr {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .stop-memo {
+      font-size: 12.5px;
+      color: #334155;
+      background: #f8fafc;
+      padding: 6px 8px;
+      border-radius: 8px;
+      margin-top: 6px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    .stop-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--border);
+      gap: 6px;
+    }
+
+    .stop-cost {
+      font-size: 12px;
+      font-weight: 600;
+      color: #0f766e;
+    }
+
+    .stop-btns {
+      display: flex;
+      gap: 4px;
+    }
+
+    .leg-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      padding: 2px 0;
+    }
+    .leg-divider::before, .leg-divider::after {
+      content: "";
+      height: 1px;
+      flex: 1;
+      background: var(--border);
+    }
+
+    /* Map Area */
+    .map-wrap {
+      flex: 1;
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      background: #e2e8f0;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .map-fallback {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: #f1f5f9;
+      z-index: 10;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      text-align: center;
+      padding: 20px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .map-overlay-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 400;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      gap: 8px;
+    }
+
+    .map-pill {
+      pointer-events: auto;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Custom Numbered Marker */
+    .custom-pin {
+      background: var(--primary);
+      color: #fff;
+      border: 2.5px solid #fff;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+    }
+
+    /* Budget Summary */
+    .budget-card {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      color: #fff;
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .budget-label { font-size: 12px; color: #94a3b8; }
+    .budget-total { font-size: 22px; font-weight: 700; margin: 4px 0 10px 0; }
+    .budget-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      padding: 4px 0;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+    }
+    .modal-backdrop.open { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 480px;
+      max-height: 90dvh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 35px rgba(0,0,0,0.2);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .modal-body {
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .modal-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      background: #f8fafc;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 13.5px;
+      color: var(--text);
+      background: #fff;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .search-input-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .search-results {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      max-height: 170px;
+      overflow-y: auto;
+      background: #f8fafc;
+      display: none;
+    }
+    .search-results.open { display: block; }
+
+    .search-item {
+      padding: 9px 11px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      font-size: 12.5px;
+    }
+    .search-item:last-child { border-bottom: none; }
+    .search-item:hover { background: #eff6ff; }
+    .search-item-name { font-weight: 700; color: var(--text); }
+    .search-item-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    .coord-status {
+      font-size: 11.5px;
+      color: var(--success);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ecfdf5;
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+    .coord-status.unset {
+      color: #b45309;
+      background: #fffbeb;
+    }
+
+    /* Mobile View Toggle */
+    .mobile-view-bar {
+      display: none;
+    }
+
+    @media (max-width: 820px) {
+      .workspace {
+        flex-direction: column;
+      }
+      .sidebar {
+        width: 100%;
+        height: 56%;
+        border-right: none;
+        border-top: 1px solid var(--border);
+        order: 2;
+      }
+      .map-wrap {
+        height: 44%;
+        order: 1;
+      }
+      .workspace.mode-list .map-wrap { display: none; }
+      .workspace.mode-list .sidebar { height: 100%; }
+      .workspace.mode-map .sidebar { display: none; }
+      .workspace.mode-map .map-wrap { height: 100%; }
+
+      .mobile-view-bar {
+        display: flex;
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1200;
+        background: #0f172a;
+        padding: 4px;
+        border-radius: 999px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+        gap: 4px;
+      }
+      .mobile-view-btn {
+        border: none;
+        background: transparent;
+        color: #cbd5e1;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 13px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .mobile-view-btn.active {
+        background: var(--primary);
+        color: #fff;
+      }
+      .hide-mobile { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand">
+        <span>🧭 RouteNote</span>
+      </div>
+
+      <div class="trip-selector-wrap">
+        <select id="tripSelect" class="trip-select" aria-label="여행 선택"></select>
+        <button class="btn btn-sm" id="newTripBtn" title="새 여행 추가">+ 여행</button>
+      </div>
+
+      <div class="header-actions">
+        <span id="syncBadge" class="sync-badge" title="클라우드 동기화 상태">
+          <span class="sync-dot"></span>
+          <span id="syncText" class="hide-mobile">로컬 저장</span>
+        </span>
+        <button class="btn btn-sm" id="syncModalBtn">☁️ 공유·백업</button>
+      </div>
+    </header>
+
+    <!-- Workspace -->
+    <main class="workspace mode-split" id="workspace">
+      <!-- Left Sidebar -->
+      <section class="sidebar">
+        <div class="day-tabs" id="dayTabs"></div>
+
+        <div class="sub-tabs">
+          <button class="sub-tab active" data-tab="schedule">📍 일정 & 동선</button>
+          <button class="sub-tab" data-tab="budget">💴 경비 정산</button>
+        </div>
+
+        <div class="panel-content" id="panelContent"></div>
+      </section>
+
+      <!-- Right Map -->
+      <section class="map-wrap">
+        <div id="map"></div>
+        <div id="mapFallback" class="map-fallback">
+          <p><strong>지도를 불러올 수 없습니다</strong></p>
+          <p>오프라인 상태이거나 인앱 브라우저에서 외부 지도가 차단되었습니다.<br/>우측 상단 메뉴에서 <strong>Chrome / Safari</strong>로 열어주세요.</p>
+        </div>
+        <div class="map-overlay-bar">
+          <div class="map-pill" id="routeSummaryPill">총 0곳 · 직선거리 0 km</div>
+          <button class="btn btn-primary btn-sm" id="quickAddBtn" style="pointer-events:auto;">+ 일정 추가</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Mobile View Switcher -->
+    <div class="mobile-view-bar">
+      <button class="mobile-view-btn active" data-view="split">분할</button>
+      <button class="mobile-view-btn" data-view="list">일정표</button>
+      <button class="mobile-view-btn" data-view="map">지도</button>
+    </div>
+  </div>
+
+  <!-- Stop Add / Edit Modal -->
+  <div class="modal-backdrop" id="stopModal">
+    <div class="modal">
+      <div class="modal-header">
+        <span id="stopModalTitle">일정 추가</span>
+        <button class="btn btn-sm" onclick="closeModal('stopModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>장소명 / 주소 검색 (한국어·일본어·영어 지원)</label>
+          <div class="search-input-row">
+            <input type="text" id="stopNameInput" placeholder="예: 아사쿠사 센소지, 시부야 스카이, 나하공항" />
+            <button type="button" class="btn btn-primary" id="placeSearchBtn">검색</button>
+          </div>
+          <div id="searchResults" class="search-results"></div>
+        </div>
+
+        <div id="coordStatusBox" class="coord-status unset">
+          <span id="coordStatusText">⚠️ 위치 미지정 (위에서 검색하거나 지도를 탭하세요)</span>
+          <button type="button" class="btn btn-sm" id="pickOnMapBtn">지도에서 찍기</button>
+        </div>
+
+        <div class="form-group">
+          <label>상세 주소 / 위치 설명</label>
+          <input type="text" id="stopAddrInput" placeholder="검색 선택 시 자동 입력됩니다" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>방문 시간</label>
+            <input type="time" id="stopTimeInput" value="10:00" />
+          </div>
+          <div class="form-group">
+            <label>카테고리</label>
+            <select id="stopCatInput">
+              <option value="관광">📸 관광</option>
+              <option value="맛집">🍜 맛집</option>
+              <option value="카페">☕ 카페</option>
+              <option value="쇼핑">🛍️ 쇼핑</option>
+              <option value="숙소">🏨 숙소</option>
+              <option value="이동">🚆 이동/교통</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>예상/실제 지출 금액</label>
+            <input type="number" id="stopCostInput" placeholder="0" min="0" />
+          </div>
+          <div class="form-group">
+            <label>통화</label>
+            <select id="stopCurrencyInput">
+              <option value="JPY">JPY (엔 ¥)</option>
+              <option value="KRW">KRW (원 ₩)</option>
+              <option value="USD">USD (달러 $)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>메모 (예약번호, 체크리스트, 팁)</label>
+          <textarea id="stopMemoInput" rows="3" placeholder="예: 14:30 입장권 QR 캡처 완료, 1층 티켓 교환처 확인"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('stopModal')">취소</button>
+        <button class="btn btn-primary" id="saveStopBtn">저장하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Trip Modal -->
+  <div class="modal-backdrop" id="tripModal">
+    <div class="modal">
+      <div class="modal-header">
+        <span>새 여행 만들기</span>
+        <button class="btn btn-sm" onclick="closeModal('tripModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>여행 제목</label>
+          <input type="text" id="newTripTitle" placeholder="예: 2026 오키나와 & 도쿄 겨울 여행" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>시작일</label>
+            <input type="date" id="newTripStart" />
+          </div>
+          <div class="form-group">
+            <label>여행 일수 (Days)</label>
+            <input type="number" id="newTripDays" value="4" min="1" max="30" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>기본 중심 도시 (초기 지도 위치)</label>
+          <select id="newTripCity">
+            <option value="35.6812,139.7671">일본 도쿄 (Tokyo)</option>
+            <option value="26.2124,127.6809">일본 오키나와 나하 (Okinawa)</option>
+            <option value="34.6937,135.5023">일본 오사카 (Osaka)</option>
+            <option value="33.5902,130.4017">일본 후쿠오카 (Fukuoka)</option>
+            <option value="33.4996,126.5312">한국 제주 (Jeju)</option>
+            <option value="37.5665,126.9780">한국 서울 (Seoul)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('tripModal')">취소</button>
+        <button class="btn btn-primary" id="createTripBtn">여행 생성</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sync & Backup Modal -->
+  <div class="modal-backdrop" id="syncModal">
+    <div class="modal">
+      <div class="modal-header">
+        <span>☁️ 실시간 공유 & 데이터 백업</span>
+        <button class="btn btn-sm" onclick="closeModal('syncModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>1. JSON 파일 백업 / 복원 (가장 안전한 보관법)</label>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn" style="flex:1;" id="exportJsonBtn">📥 백업 파일 저장 (.json)</button>
+            <button type="button" class="btn" style="flex:1;" id="importJsonBtn">📤 백업 파일 불러오기</button>
+            <input type="file" id="importJsonFile" accept=".json" style="display:none;" />
+          </div>
+        </div>
+
+        <hr style="border:none; border-top:1px solid var(--border); width:100%;" />
+
+        <div class="form-group">
+          <label>2. 친구와 실시간 공동 편집 (Firebase Realtime DB)</label>
+          <input type="url" id="firebaseUrlInput" placeholder="https://프로젝트명-default-rtdb.asia-southeast1.firebasedatabase.app" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>공유 방 코드 (Room ID)</label>
+            <input type="text" id="roomIdInput" placeholder="예: tokyo-2026-friends" />
+          </div>
+          <div class="form-group">
+            <label>연결 관리</label>
+            <button type="button" class="btn btn-primary" id="connectFirebaseBtn" style="height:38px;">연결 & 동기화</button>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn btn-sm" id="copyShareLinkBtn" style="flex:1;">🔗 친구 초대 링크 복사</button>
+          <button type="button" class="btn btn-sm btn-danger" id="disconnectFirebaseBtn">연결 해제</button>
+        </div>
+
+        <hr style="border:none; border-top:1px solid var(--border); width:100%;" />
+
+        <div class="form-group">
+          <label>3. (선택) Google Places API 키 — 정밀 상호 검색용</label>
+          <input type="password" id="googleApiKeyInput" placeholder="미입력 시 무료 OpenStreetMap/Photon 검색 자동 사용" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="saveSettingsBtn">설정 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    // Safe Storage Wrapper (prevents crash in restricted mobile webviews)
+    const SafeStorage = {
+      mem: {},
+      get(key) {
+        try {
+          return window.localStorage.getItem(key);
+        } catch (e) {
+          return this.mem[key] || null;
+        }
+      },
+      set(key, val) {
+        this.mem[key] = val;
+        try {
+          window.localStorage.setItem(key, val);
+        } catch (e) {}
+      }
+    };
+
+    const STORAGE_KEY = 'routenote_trips_v2';
+    const SETTINGS_KEY = 'routenote_settings_v2';
+
+    const DEFAULT_TRIPS = [
+      {
+        id: 'trip-japan-2026',
+        title: '🇯🇵 도쿄 & 가마쿠라 일정 예시',
+        startDate: '2026-12-16',
+        center: [35.6812, 139.7671],
+        days: [
+          {
+            dayNum: 1,
+            label: 'Day 1',
+            stops: [
+              {
+                id: 's1',
+                time: '10:30',
+                name: '아사쿠사 센소지',
+                addr: '2 Chome-3-1 Asakusa, Taito City, Tokyo',
+                cat: '관광',
+                lat: 35.7148,
+                lng: 139.7967,
+                cost: 0,
+                currency: 'JPY',
+                memo: '카미나리몬 앞에서 사진 찍고 나카미세 거리 구경'
+              },
+              {
+                id: 's2',
+                time: '13:00',
+                name: '긴자 캐피털 호텔 아카네',
+                addr: '3 Chome-1-5 Tsukiji, Chuo City, Tokyo',
+                cat: '숙소',
+                lat: 35.6695,
+                lng: 139.7735,
+                cost: 15000,
+                currency: 'JPY',
+                memo: '짐 보관 후 긴자 시내 이동'
+              },
+              {
+                id: 's3',
+                time: '16:30',
+                name: '시부야 스카이',
+                addr: '2 Chome-24-12 Shibuya, Tokyo',
+                cat: '관광',
+                lat: 35.6585,
+                lng: 139.7022,
+                cost: 2500,
+                currency: 'JPY',
+                memo: '일몰 30분 전 입장 예약 확인'
+              }
+            ]
+          },
+          {
+            dayNum: 2,
+            label: 'Day 2',
+            stops: [
+              {
+                id: 's4',
+                time: '09:30',
+                name: '가마쿠라 코마치도리',
+                addr: 'Komachi, Kamakura, Kanagawa',
+                cat: '맛집',
+                lat: 35.3192,
+                lng: 139.5515,
+                cost: 3000,
+                currency: 'JPY',
+                memo: '친구들과 에노덴 타고 이동'
+              }
+            ]
+          }
+        ]
+      }
+    ];
+
+    let state = {
+      trips: [],
+      activeTripId: null,
+      activeDayIndex: 0,
+      activeSubTab: 'schedule',
+      editingStopId: null,
+      draftLat: null,
+      draftLng: null,
+      pickingOnMap: false,
+      settings: {
+        firebaseUrl: '',
+        roomId: '',
+        googleApiKey: ''
+      }
+    };
+
+    let map = null;
+    let markersLayer = null;
+    let routeLine = null;
+    let eventSource = null;
+
+    // Initialize App
+    function init() {
+      loadSettings();
+      checkUrlParams();
+      loadTrips();
+      initMap();
+      bindEvents();
+      renderAll();
+      if (state.settings.firebaseUrl && state.settings.roomId) {
+        startFirebaseSync();
+      }
+    }
+
+    function loadSettings() {
+      try {
+        const raw = SafeStorage.get(SETTINGS_KEY);
+        if (raw) state.settings = { ...state.settings, ...JSON.parse(raw) };
+      } catch (e) {}
+    }
+
+    function saveSettingsToStorage() {
+      SafeStorage.set(SETTINGS_KEY, JSON.stringify(state.settings));
+    }
+
+    function checkUrlParams() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const fb = params.get('fb');
+        const room = params.get('room');
+        if (fb && room) {
+          state.settings.firebaseUrl = fb.replace(/\/$/, '');
+          state.settings.roomId = room;
+          saveSettingsToStorage();
+        }
+      } catch (e) {}
+    }
+
+    function loadTrips() {
+      try {
+        const raw = SafeStorage.get(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            state.trips = parsed;
+            state.activeTripId = state.trips[0].id;
+            return;
+          }
+        }
+      } catch (e) {}
+      state.trips = JSON.parse(JSON.stringify(DEFAULT_TRIPS));
+      state.activeTripId = state.trips[0].id;
+      persistTrips(false);
+    }
+
+    function persistTrips(pushRemote = true) {
+      SafeStorage.set(STORAGE_KEY, JSON.stringify(state.trips));
+      if (pushRemote && state.settings.firebaseUrl && state.settings.roomId) {
+        pushToFirebase();
+      }
+    }
+
+    function getActiveTrip() {
+      return state.trips.find(t => t.id === state.activeTripId) || state.trips[0];
+    }
+
+    function getActiveDay() {
+      const trip = getActiveTrip();
+      if (!trip.days[state.activeDayIndex]) state.activeDayIndex = 0;
+      return trip.days[state.activeDayIndex];
+    }
+
+    // Leaflet Map Initialization
+    function initMap() {
+      if (typeof L === 'undefined') {
+        document.getElementById('mapFallback').style.display = 'flex';
+        return;
+      }
+      const trip = getActiveTrip();
+      map = L.map('map', { zoomControl: true }).setView(trip.center || [35.6812, 139.7671], 12);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        maxZoom: 19
+      }).addTo(map);
+
+      markersLayer = L.layerGroup().addTo(map);
+
+      map.on('click', (e) => {
+        if (state.pickingOnMap) {
+          state.draftLat = Number(e.latlng.lat.toFixed(6));
+          state.draftLng = Number(e.latlng.lng.toFixed(6));
+          state.pickingOnMap = false;
+          updateCoordStatusUI();
+          openModal('stopModal');
+        }
+      });
+    }
+
+    // Render Everything
+    function renderAll() {
+      renderTripSelect();
+      renderDayTabs();
+      renderPanel();
+      renderMap();
+    }
+
+    function renderTripSelect() {
+      const sel = document.getElementById('tripSelect');
+      sel.innerHTML = state.trips.map(t =>
+        `<option value="${t.id}" ${t.id === state.activeTripId ? 'selected' : ''}>${escapeHtml(t.title)}</option>`
+      ).join('');
+    }
+
+    function renderDayTabs() {
+      const trip = getActiveTrip();
+      const container = document.getElementById('dayTabs');
+      let html = trip.days.map((d, idx) =>
+        `<button class="day-tab ${idx === state.activeDayIndex ? 'active' : ''}" onclick="selectDay(${idx})">${escapeHtml(d.label)} (${d.stops.length})</button>`
+      ).join('');
+      html += `<button class="day-tab" onclick="addDay()">+ Day</button>`;
+      container.innerHTML = html;
+    }
+
+    function renderPanel() {
+      const container = document.getElementById('panelContent');
+      if (state.activeSubTab === 'budget') {
+        renderBudgetPanel(container);
+      } else {
+        renderSchedulePanel(container);
+      }
+    }
+
+    function renderSchedulePanel(container) {
+      const day = getActiveDay();
+      let html = `
+        <div class="hint-box">
+          <span>💡 장소명 검색으로 핀 위치를 자동 지정할 수 있습니다.</span>
+          <button class="btn btn-primary btn-sm" onclick="openAddStopModal()">+ 추가</button>
+        </div>
+      `;
+
+      if (day.stops.length === 0) {
+        html += `<div style="text-align:center; padding:36px 12px; color:var(--text-muted); font-size:13px;">
+          등록된 일정이 없습니다.<br/>상단 <strong>+ 추가</strong> 버튼을 눌러 장소를 검색해 보세요.
+        </div>`;
+        container.innerHTML = html;
+        return;
+      }
+
+      day.stops.forEach((stop, idx) => {
+        const hasCoord = typeof stop.lat === 'number' && typeof stop.lng === 'number';
+        html += `
+          <div class="stop-card" onclick="focusStop(${idx})">
+            <div class="stop-top">
+              <div class="stop-badge">${idx + 1}</div>
+              <div class="stop-info">
+                <div class="stop-meta">
+                  <span>⏰ ${escapeHtml(stop.time || '--:--')}</span>
+                  <span class="cat-pill">${escapeHtml(stop.cat || '관광')}</span>
+                  ${hasCoord ? '' : '<span style="color:#d97706; font-weight:600;">⚠️ 좌표 미지정</span>'}
+                </div>
+                <div class="stop-title">${escapeHtml(stop.name)}</div>
+                ${stop.addr ? `<div class="stop-addr">📍 ${escapeHtml(stop.addr)}</div>` : ''}
+                ${stop.memo ? `<div class="stop-memo">${escapeHtml(stop.memo)}</div>` : ''}
+              </div>
+            </div>
+            <div class="stop-footer" onclick="event.stopPropagation()">
+              <div class="stop-cost">${stop.cost > 0 ? `${Number(stop.cost).toLocaleString()} ${stop.currency}` : '비용 없음'}</div>
+              <div class="stop-btns">
+                ${idx > 0 ? `<button class="btn btn-sm" onclick="moveStop(${idx}, -1)" title="위로">↑</button>` : ''}
+                ${idx < day.stops.length - 1 ? `<button class="btn btn-sm" onclick="moveStop(${idx}, 1)" title="아래로">↓</button>` : ''}
+                <button class="btn btn-sm" onclick="openEditStopModal('${stop.id}')">수정</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteStop('${stop.id}')">삭제</button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        if (idx < day.stops.length - 1) {
+          const next = day.stops[idx + 1];
+          const dist = calcDistanceKm(stop, next);
+          html += `<div class="leg-divider">${dist !== null ? `직선 이동 약 ${dist.toFixed(1)} km` : '다음 장소로 이동'}</div>`;
+        }
+      });
+
+      container.innerHTML = html;
+    }
+
+    function renderBudgetPanel(container) {
+      const trip = getActiveTrip();
+      const totals = { JPY: 0, KRW: 0, USD: 0 };
+      const dayTotals = [];
+
+      trip.days.forEach(d => {
+        let dSum = { JPY: 0, KRW: 0, USD: 0 };
+        d.stops.forEach(s => {
+          const val = Number(s.cost) || 0;
+          const cur = s.currency || 'JPY';
+          if (totals[cur] !== undefined) totals[cur] += val;
+          if (dSum[cur] !== undefined) dSum[cur] += val;
+        });
+        dayTotals.push({ label: d.label, sum: dSum });
+      });
+
+      let html = `
+        <div class="budget-card">
+          <div class="budget-label">전체 여행 누적 경비</div>
+          <div class="budget-total">¥ ${totals.JPY.toLocaleString()} <span style="font-size:14px; font-weight:500; color:#cbd5e1;">/ ₩ ${totals.KRW.toLocaleString()}</span></div>
+          ${totals.USD > 0 ? `<div class="budget-row"><span>달러(USD)</span><span>$ ${totals.USD.toLocaleString()}</span></div>` : ''}
+        </div>
+      `;
+
+      dayTotals.forEach(dt => {
+        html += `
+          <div class="stop-card" style="cursor:default;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong>${escapeHtml(dt.label)}</strong>
+              <span style="font-weight:700; color:#0f766e;">¥ ${dt.sum.JPY.toLocaleString()} · ₩ ${dt.sum.KRW.toLocaleString()}</span>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function renderMap() {
+      const day = getActiveDay();
+      const validStops = day.stops.filter(s => typeof s.lat === 'number' && typeof s.lng === 'number');
+
+      let totalDist = 0;
+      for (let i = 0; i < validStops.length - 1; i++) {
+        totalDist += calcDistanceKm(validStops[i], validStops[i + 1]) || 0;
+      }
+      document.getElementById('routeSummaryPill').textContent =
+        `${day.label} · 핀 ${validStops.length}곳 · 동선 ${totalDist.toFixed(1)} km`;
+
+      if (!map || !markersLayer) return;
+
+      markersLayer.clearLayers();
+      if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+      }
+
+      const latlngs = [];
+      day.stops.forEach((stop, idx) => {
+        if (typeof stop.lat !== 'number' || typeof stop.lng !== 'number') return;
+        const ll = [stop.lat, stop.lng];
+        latlngs.push(ll);
+
+        const icon = L.divIcon({
+          className: '',
+          html: `<div class="custom-pin">${idx + 1}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        const marker = L.marker(ll, { icon }).addTo(markersLayer);
+        marker.bindPopup(`<strong>${idx + 1}. ${escapeHtml(stop.name)}</strong><br/><span style="font-size:12px;color:#64748b;">${escapeHtml(stop.time || '')} · ${escapeHtml(stop.addr || '')}</span>`);
+      });
+
+      if (latlngs.length > 1) {
+        routeLine = L.polyline(latlngs, {
+          color: '#3b82f6',
+          weight: 4,
+          opacity: 0.8,
+          dashArray: '8, 8'
+        }).addTo(map);
+      }
+
+      if (latlngs.length > 0) {
+        const bounds = L.latLngBounds(latlngs);
+        map.fitBounds(bounds, { padding: [45, 45], maxZoom: 15 });
+      }
+    }
+
+    // Place Search (Photon + Nominatim Free Geocoding)
+    async function searchPlaces() {
+      const query = document.getElementById('stopNameInput').value.trim();
+      const resultsEl = document.getElementById('searchResults');
+      if (!query) {
+        alert('검색할 장소명이나 주소를 입력해 주세요.');
+        return;
+      }
+
+      resultsEl.innerHTML = `<div class="search-item">🔍 "${escapeHtml(query)}" 검색 중...</div>`;
+      resultsEl.classList.add('open');
+
+      try {
+        // 1. Photon API (Fast, multilingual OSM search)
+        const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6`;
+        const res = await fetch(photonUrl);
+        const data = await res.json();
+
+        let items = [];
+        if (data && Array.isArray(data.features)) {
+          items = data.features.map(f => {
+            const p = f.properties || {};
+            const coords = f.geometry && f.geometry.coordinates ? f.geometry.coordinates : [null, null];
+            const name = p.name || query;
+            const parts = [p.country, p.state, p.city, p.district, p.street].filter(Boolean);
+            return {
+              name,
+              addr: parts.join(' '),
+              lng: coords[0],
+              lat: coords[1]
+            };
+          }).filter(x => x.lat !== null && x.lng !== null);
+        }
+
+        // 2. Fallback to OpenStreetMap Nominatim if Photon returns empty
+        if (items.length === 0) {
+          const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
+          const nomRes = await fetch(nomUrl);
+          const nomData = await nomRes.json();
+          items = (nomData || []).map(item => ({
+            name: item.display_name.split(',')[0],
+            addr: item.display_name,
+            lat: parseFloat(item.lat),
+            lng: parseFloat(item.lon)
+          }));
+        }
+
+        if (items.length === 0) {
+          resultsEl.innerHTML = `<div class="search-item">검색 결과가 없습니다. 영문/현지어로 검색하거나 <strong>지도에서 찍기</strong>를 이용해 주세요.</div>`;
+          return;
+        }
+
+        resultsEl.innerHTML = items.map((item, i) => `
+          <div class="search-item" data-idx="${i}">
+            <div class="search-item-name">📍 ${escapeHtml(item.name)}</div>
+            <div class="search-item-sub">${escapeHtml(item.addr || `${item.lat}, ${item.lng}`)}</div>
+          </div>
+        `).join('');
+
+        resultsEl.querySelectorAll('.search-item').forEach((el, idx) => {
+          el.addEventListener('click', () => {
+            const chosen = items[idx];
+            document.getElementById('stopNameInput').value = chosen.name;
+            document.getElementById('stopAddrInput').value = chosen.addr;
+            state.draftLat = Number(chosen.lat.toFixed(6));
+            state.draftLng = Number(chosen.lng.toFixed(6));
+            updateCoordStatusUI();
+            resultsEl.classList.remove('open');
+            if (map) map.setView([state.draftLat, state.draftLng], 15);
+          });
+        });
+      } catch (err) {
+        resultsEl.innerHTML = `<div class="search-item">검색 네트워크 오류가 발생했습니다. <strong>지도에서 찍기</strong>로 좌표를 직접 지정할 수 있습니다.</div>`;
+      }
+    }
+
+    function updateCoordStatusUI() {
+      const box = document.getElementById('coordStatusBox');
+      const txt = document.getElementById('coordStatusText');
+      if (typeof state.draftLat === 'number' && typeof state.draftLng === 'number') {
+        box.classList.remove('unset');
+        txt.textContent = `✅ 좌표 확정됨 (${state.draftLat}, ${state.draftLng})`;
+      } else {
+        box.classList.add('unset');
+        txt.textContent = '⚠️ 위치 미지정 (위에서 검색하거나 지도를 탭하세요)';
+      }
+    }
+
+    // Stop CRUD
+    function openAddStopModal() {
+      state.editingStopId = null;
+      state.draftLat = null;
+      state.draftLng = null;
+      document.getElementById('stopModalTitle').textContent = '새 일정 추가';
+      document.getElementById('stopNameInput').value = '';
+      document.getElementById('stopAddrInput').value = '';
+      document.getElementById('stopTimeInput').value = '10:00';
+      document.getElementById('stopCatInput').value = '관광';
+      document.getElementById('stopCostInput').value = '';
+      document.getElementById('stopCurrencyInput').value = 'JPY';
+      document.getElementById('stopMemoInput').value = '';
+      document.getElementById('searchResults').classList.remove('open');
+      updateCoordStatusUI();
+      openModal('stopModal');
+    }
+
+    function openEditStopModal(stopId) {
+      const day = getActiveDay();
+      const stop = day.stops.find(s => s.id === stopId);
+      if (!stop) return;
+      state.editingStopId = stopId;
+      state.draftLat = typeof stop.lat === 'number' ? stop.lat : null;
+      state.draftLng = typeof stop.lng === 'number' ? stop.lng : null;
+
+      document.getElementById('stopModalTitle').textContent = '일정 수정';
+      document.getElementById('stopNameInput').value = stop.name || '';
+      document.getElementById('stopAddrInput').value = stop.addr || '';
+      document.getElementById('stopTimeInput').value = stop.time || '10:00';
+      document.getElementById('stopCatInput').value = stop.cat || '관광';
+      document.getElementById('stopCostInput').value = stop.cost || '';
+      document.getElementById('stopCurrencyInput').value = stop.currency || 'JPY';
+      document.getElementById('stopMemoInput').value = stop.memo || '';
+      document.getElementById('searchResults').classList.remove('open');
+      updateCoordStatusUI();
+      openModal('stopModal');
+    }
+
+    function saveStop() {
+      const name = document.getElementById('stopNameInput').value.trim();
+      if (!name) {
+        alert('장소명을 입력해 주세요.');
+        return;
+      }
+
+      const payload = {
+        id: state.editingStopId || 'stop-' + Date.now(),
+        name,
+        addr: document.getElementById('stopAddrInput').value.trim(),
+        time: document.getElementById('stopTimeInput').value,
+        cat: document.getElementById('stopCatInput').value,
+        cost: Number(document.getElementById('stopCostInput').value) || 0,
+        currency: document.getElementById('stopCurrencyInput').value,
+        memo: document.getElementById('stopMemoInput').value.trim(),
+        lat: state.draftLat,
+        lng: state.draftLng
+      };
+
+      const day = getActiveDay();
+      if (state.editingStopId) {
+        const idx = day.stops.findIndex(s => s.id === state.editingStopId);
+        if (idx !== -1) day.stops[idx] = payload;
+      } else {
+        day.stops.push(payload);
+      }
+
+      persistTrips(true);
+      closeModal('stopModal');
+      renderAll();
+    }
+
+    function deleteStop(stopId) {
+      if (!confirm('이 일정을 삭제할까요?')) return;
+      const day = getActiveDay();
+      day.stops = day.stops.filter(s => s.id !== stopId);
+      persistTrips(true);
+      renderAll();
+    }
+
+    function moveStop(idx, dir) {
+      const day = getActiveDay();
+      const target = idx + dir;
+      if (target < 0 || target >= day.stops.length) return;
+      const temp = day.stops[idx];
+      day.stops[idx] = day.stops[target];
+      day.stops[target] = temp;
+      persistTrips(true);
+      renderAll();
+    }
+
+    function focusStop(idx) {
+      const day = getActiveDay();
+      const stop = day.stops[idx];
+      if (stop && typeof stop.lat === 'number' && typeof stop.lng === 'number' && map) {
+        map.setView([stop.lat, stop.lng], 16);
+      }
+    }
+
+    function selectDay(idx) {
+      state.activeDayIndex = idx;
+      renderAll();
+    }
+
+    function addDay() {
+      const trip = getActiveTrip();
+      const nextNum = trip.days.length + 1;
+      trip.days.push({ dayNum: nextNum, label: `Day ${nextNum}`, stops: [] });
+      state.activeDayIndex = trip.days.length - 1;
+      persistTrips(true);
+      renderAll();
+    }
+
+    // Trip Creation
+    function createTrip() {
+      const title = document.getElementById('newTripTitle').value.trim() || '새 여행 일정';
+      const startDate = document.getElementById('newTripStart').value || '2026-12-01';
+      const numDays = Math.min(30, Math.max(1, Number(document.getElementById('newTripDays').value) || 3));
+      const centerParts = document.getElementById('newTripCity').value.split(',').map(Number);
+
+      const days = [];
+      for (let i = 1; i <= numDays; i++) {
+        days.push({ dayNum: i, label: `Day ${i}`, stops: [] });
+      }
+
+      const newTrip = {
+        id: 'trip-' + Date.now(),
+        title,
+        startDate,
+        center: centerParts,
+        days
+      };
+
+      state.trips.unshift(newTrip);
+      state.activeTripId = newTrip.id;
+      state.activeDayIndex = 0;
+      persistTrips(true);
+      closeModal('tripModal');
+      renderAll();
+      if (map) map.setView(centerParts, 12);
+    }
+
+    // JSON Backup & Restore
+    function exportJson() {
+      const blob = new Blob([JSON.stringify(state.trips, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `routenote_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importJson(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Invalid format');
+          state.trips = parsed;
+          state.activeTripId = state.trips[0].id;
+          state.activeDayIndex = 0;
+          persistTrips(true);
+          renderAll();
+          alert('백업 데이터를 성공적으로 복원했습니다!');
+          closeModal('syncModal');
+        } catch (err) {
+          alert('올바른 RouteNote 백업(.json) 파일이 아닙니다.');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // Firebase Realtime DB Sync
+    function getFirebaseEndpoint() {
+      const base = state.settings.firebaseUrl.replace(/\/$/, '');
+      const room = encodeURIComponent(state.settings.roomId.trim());
+      return `${base}/routenote_rooms/${room}.json`;
+    }
+
+    async function pushToFirebase() {
+      if (!state.settings.firebaseUrl || !state.settings.roomId) return;
+      try {
+        await fetch(getFirebaseEndpoint(), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updatedAt: Date.now(), trips: state.trips })
+        });
+      } catch (e) {}
+    }
+
+    function startFirebaseSync() {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (!state.settings.firebaseUrl || !state.settings.roomId) {
+        updateSyncBadge(false);
+        return;
+      }
+
+      try {
+        eventSource = new EventSource(getFirebaseEndpoint());
+        eventSource.addEventListener('put', (e) => {
+          updateSyncBadge(true);
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg && msg.data && Array.isArray(msg.data.trips) && msg.data.trips.length > 0) {
+              state.trips = msg.data.trips;
+              if (!state.trips.some(t => t.id === state.activeTripId)) {
+                state.activeTripId = state.trips[0].id;
+              }
+              SafeStorage.set(STORAGE_KEY, JSON.stringify(state.trips));
+              renderAll();
+            } else if (msg && msg.data === null) {
+              pushToFirebase();
+            }
+          } catch (err) {}
+        });
+        eventSource.onerror = () => updateSyncBadge(false);
+      } catch (e) {
+        updateSyncBadge(false);
+      }
+    }
+
+    function updateSyncBadge(connected) {
+      const badge = document.getElementById('syncBadge');
+      const text = document.getElementById('syncText');
+      if (connected) {
+        badge.classList.add('connected');
+        text.textContent = `동기화됨 (${state.settings.roomId})`;
+      } else {
+        badge.classList.remove('connected');
+        text.textContent = '로컬 저장';
+      }
+    }
+
+    // Distance Calculation (Haversine)
+    function calcDistanceKm(a, b) {
+      if (typeof a.lat !== 'number' || typeof a.lng !== 'number' || typeof b.lat !== 'number' || typeof b.lng !== 'number') {
+        return null;
+      }
+      const R = 6371;
+      const dLat = (b.lat - a.lat) * Math.PI / 180;
+      const dLng = (b.lng - a.lng) * Math.PI / 180;
+      const x = Math.sin(dLat / 2) ** 2 +
+        Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+    }
+
+    function openModal(id) { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Event Bindings
+    function bindEvents() {
+      document.getElementById('tripSelect').addEventListener('change', (e) => {
+        state.activeTripId = e.target.value;
+        state.activeDayIndex = 0;
+        renderAll();
+      });
+
+      document.getElementById('newTripBtn').addEventListener('click', () => openModal('tripModal'));
+      document.getElementById('createTripBtn').addEventListener('click', createTrip);
+
+      document.getElementById('quickAddBtn').addEventListener('click', openAddStopModal);
+      document.getElementById('placeSearchBtn').addEventListener('click', searchPlaces);
+      document.getElementById('stopNameInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          searchPlaces();
+        }
+      });
+
+      document.getElementById('pickOnMapBtn').addEventListener('click', () => {
+        state.pickingOnMap = true;
+        closeModal('stopModal');
+        alert('지도에서 원하는 위치를 한 번 탭해 주세요.');
+      });
+
+      document.getElementById('saveStopBtn').addEventListener('click', saveStop);
+
+      // Sub-tabs
+      document.querySelectorAll('.sub-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.activeSubTab = btn.dataset.tab;
+          renderPanel();
+        });
+      });
+
+      // Mobile view toggle
+      document.querySelectorAll('.mobile-view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.mobile-view-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const ws = document.getElementById('workspace');
+          ws.className = 'workspace mode-' + btn.dataset.view;
+          if (map) setTimeout(() => map.invalidateSize(), 120);
+        });
+      });
+
+      // Sync & Backup modal
+      document.getElementById('syncModalBtn').addEventListener('click', () => {
+        document.getElementById('firebaseUrlInput').value = state.settings.firebaseUrl || '';
+        document.getElementById('roomIdInput').value = state.settings.roomId || '';
+        document.getElementById('googleApiKeyInput').value = state.settings.googleApiKey || '';
+        openModal('syncModal');
+      });
+
+      document.getElementById('exportJsonBtn').addEventListener('click', exportJson);
+      document.getElementById('importJsonBtn').addEventListener('click', () => document.getElementById('importJsonFile').click());
+      document.getElementById('importJsonFile').addEventListener('change', (e) => importJson(e.target.files[0]));
+
+      document.getElementById('connectFirebaseBtn').addEventListener('click', () => {
+        state.settings.firebaseUrl = document.getElementById('firebaseUrlInput').value.trim().replace(/\/$/, '');
+        state.settings.roomId = document.getElementById('roomIdInput').value.trim();
+        saveSettingsToStorage();
+        startFirebaseSync();
+        alert('Firebase 방 연결을 시작했습니다.');
+      });
+
+      document.getElementById('disconnectFirebaseBtn').addEventListener('click', () => {
+        state.settings.firebaseUrl = '';
+        state.settings.roomId = '';
+        saveSettingsToStorage();
+        if (eventSource) eventSource.close();
+        updateSyncBadge(false);
+        alert('클라우드 동기화가 해제되었습니다.');
+      });
+
+      document.getElementById('copyShareLinkBtn').addEventListener('click', async () => {
+        if (!state.settings.firebaseUrl || !state.settings.roomId) {
+          alert('먼저 Firebase DB 주소와 방 코드(Room ID)를 입력해 주세요.');
+          return;
+        }
+        const url = new URL(window.location.href);
+        url.searchParams.set('fb', state.settings.firebaseUrl);
+        url.searchParams.set('room', state.settings.roomId);
+        try {
+          await navigator.clipboard.writeText(url.toString());
+          alert('친구 초대 링크가 복사되었습니다!');
+        } catch (e) {
+          prompt('아래 링크를 복사해서 친구에게 공유하세요:', url.toString());
+        }
+      });
+
+      document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+        state.settings.firebaseUrl = document.getElementById('firebaseUrlInput').value.trim().replace(/\/$/, '');
+        state.settings.roomId = document.getElementById('roomIdInput').value.trim();
+        state.settings.googleApiKey = document.getElementById('googleApiKeyInput').value.trim();
+        saveSettingsToStorage();
+        if (state.settings.firebaseUrl && state.settings.roomId) startFirebaseSync();
+        closeModal('syncModal');
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
